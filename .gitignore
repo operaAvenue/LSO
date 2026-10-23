@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+backend/outputs/audio/*.mp3
+backend/outputs/manifests/*.json
+backend/outputs/uploads/*
+
+# Node / Next.js
+node_modules/
+.next/
+out/
+npm-debug.log*
+
+# Environment & OS
+.env
+.env.local
+.DS_Store
