@@ -3,7 +3,19 @@
 @tailwind utilities;
 
 :root {
-  color-scheme: dark;
+  --theme-bg: #181523;
+  --theme-bg-2: #221e30;
+  --theme-surface: rgba(38, 33, 54, 0.86);
+  --theme-surface-solid: #262136;
+  --theme-text: #f3eefc;
+  --theme-muted: #a99ec2;
+  --theme-accent: #b8a1ff;
+  --theme-accent-2: #f4a9c7;
+  --theme-accent-text: #181523;
+  --theme-border: rgba(155, 135, 245, 0.24);
+  --theme-radius: 18px;
+  --theme-blur: 24px;
+  --theme-scale: 1;
 }
 
 html,
@@ -13,9 +25,32 @@ body {
   width: 100vw;
   height: 100vh;
   overflow: hidden;
-  background-color: #04060c;
-  color: #f8fafc;
+  background-color: var(--theme-bg);
+  color: var(--theme-text);
   font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-size: calc(16px * var(--theme-scale));
+}
+
+.theme-bar {
+  background-color: var(--theme-surface);
+  color: var(--theme-text);
+  border-color: var(--theme-border);
+  backdrop-filter: blur(var(--theme-blur));
+  -webkit-backdrop-filter: blur(var(--theme-blur));
+}
+
+.theme-panel {
+  background-color: var(--theme-surface);
+  color: var(--theme-text);
+  border-color: var(--theme-border);
+  border-radius: var(--theme-radius);
+  backdrop-filter: blur(var(--theme-blur));
+  -webkit-backdrop-filter: blur(var(--theme-blur));
+}
+
+.theme-accent-bg {
+  background: linear-gradient(135deg, var(--theme-accent), var(--theme-accent-2));
+  color: var(--theme-accent-text);
 }
 
 .no-scrollbar::-webkit-scrollbar {

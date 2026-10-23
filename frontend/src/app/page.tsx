@@ -46,6 +46,12 @@ import {
   resolveBackendAssetUrl,
   saveStudioProject,
 } from "@/lib/api";
+import {
+  AppThemeConfig,
+  DEFAULT_THEME_CONFIG,
+  THEME_PRESETS,
+  hexToRgba,
+} from "@/lib/themes";
 import { Maximize2, Minimize2, Video } from "lucide-react";
 
 const DEFAULT_POSE: RigKeyframe = {
@@ -70,6 +76,8 @@ export default function AITVStudioWorkspace() {
     useState<RenderStageMode>("3D");
   const [activeDrawer, setActiveDrawer] = useState<ActiveDrawerType>(null);
   const [timelineOpen, setTimelineOpen] = useState<boolean>(true);
+  const [themeConfig, setThemeConfig] =
+    useState<AppThemeConfig>(DEFAULT_THEME_CONFIG);
 
   // Studio Scene Editor States (3D/2D Objects, Characters, Layers, Lights, Cameras, Quality, Projects)
   const [studioEditorOpen, setStudioEditorOpen] = useState<boolean>(false);
@@ -158,10 +166,54 @@ export default function AITVStudioWorkspace() {
         if (proj.cameras?.length) setCameras(proj.cameras);
         if (proj.quality) setQuality(proj.quality);
       }
+      const savedTheme = localStorage.getItem("aitv_theme_v26");
+      if (savedTheme) {
+        const parsedTheme: AppThemeConfig = JSON.parse(savedTheme);
+        setThemeConfig((prev) => ({ ...prev, ...parsedTheme }));
+      }
     } catch {
       // ignore storage errors
     }
   }, []);
+
+  // Apply active themeConfig CSS Variables to document root & sync stage background if enabled
+  useEffect(() => {
+    const root = document.documentElement;
+    root.style.setProperty("--theme-bg", themeConfig.bgPrimary);
+    root.style.setProperty("--theme-bg-2", themeConfig.bgSecondary);
+    root.style.setProperty(
+      "--theme-surface",
+      hexToRgba(themeConfig.bgSurface, themeConfig.surfaceOpacity)
+    );
+    root.style.setProperty("--theme-surface-solid", themeConfig.bgSurface);
+    root.style.setProperty("--theme-text", themeConfig.textPrimary);
+    root.style.setProperty("--theme-muted", themeConfig.textMuted);
+    root.style.setProperty("--theme-accent", themeConfig.accentPrimary);
+    root.style.setProperty("--theme-accent-2", themeConfig.accentSecondary);
+    root.style.setProperty("--theme-accent-text", themeConfig.accentText);
+    root.style.setProperty(
+      "--theme-border",
+      hexToRgba(themeConfig.borderHex, themeConfig.borderAlpha)
+    );
+    root.style.setProperty("--theme-radius", `${themeConfig.borderRadiusPx}px`);
+    root.style.setProperty("--theme-blur", `${themeConfig.blurPx}px`);
+    root.style.setProperty("--theme-scale", String(themeConfig.uiScale));
+
+    try {
+      localStorage.setItem("aitv_theme_v26", JSON.stringify(themeConfig));
+    } catch {
+      // ignore
+    }
+
+    if (themeConfig.syncStageBackground) {
+      setLighting((prev) => ({
+        ...prev,
+        background_top: themeConfig.bgPrimary,
+        background_bottom: themeConfig.bgSecondary,
+        fog_color: themeConfig.bgPrimary,
+      }));
+    }
+  }, [themeConfig]);
 
   const syncHealth = useCallback(async (currentVault: ApiVaultState) => {
     try {
@@ -556,11 +608,17 @@ export default function AITVStudioWorkspace() {
       : null);
 
   return (
-    <main className="relative w-screen h-screen overflow-hidden bg-[#04060c]">
+    <main
+      className="relative w-screen h-screen overflow-hidden"
+      style={{
+        backgroundColor: "var(--theme-bg)",
+        color: "var(--theme-text)",
+      }}
+    >
       {/* Hidden Real HTMLAudioElement with CORS enabled for Web Audio API AnalyserNode */}
       <audio ref={audioElRef} crossOrigin="anonymous" className="hidden" />
 
-      {/* Top Floating Stitch Pill */}
+      {/* Top Full-Width Stitch Bar (100% Left-to-Right) */}
       <TopStitchPill
         selectedProgram={selectedProgram}
         onSelectProgram={setSelectedProgram}
@@ -582,6 +640,25 @@ export default function AITVStudioWorkspace() {
           }
         }}
         providerStatus={providerStatus}
+        themeConfig={themeConfig}
+        onQuickToggleCategory={() => {
+          const targetCategory =
+            themeConfig.category === "LIGHT_PASTEL"
+              ? "DARK_PASTEL"
+              : "LIGHT_PASTEL";
+          const nextPreset =
+            THEME_PRESETS.find((p) => p.category === targetCategory) ||
+            DEFAULT_THEME_CONFIG;
+          setThemeConfig((prev) => ({
+            ...nextPreset,
+            surfaceOpacity: prev.surfaceOpacity,
+            blurPx: prev.blurPx,
+            borderRadiusPx: prev.borderRadiusPx,
+            borderAlpha: prev.borderAlpha,
+            uiScale: prev.uiScale,
+            syncStageBackground: prev.syncStageBackground,
+          }));
+        }}
       />
 
       {/* Error Toast if any */}
@@ -802,6 +879,8 @@ export default function AITVStudioWorkspace() {
         isRecordingStage={isRecordingStage}
         onToggleRecordStage={handleToggleRecordStage}
         llmProvider={llmProvider}
+        themeConfig={themeConfig}
+        onChangeThemeConfig={setThemeConfig}
       />
 
       {/* Gemini OmniBar Floating ABOVE the Full-Width Footer Timeline */}

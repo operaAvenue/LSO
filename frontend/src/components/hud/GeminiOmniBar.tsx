@@ -51,9 +51,9 @@ export default function GeminiOmniBar({
               key={idx}
               type="button"
               onClick={() => setPrompt(q)}
-              className="shrink-0 px-2.5 py-1 rounded-full bg-slate-950/80 hover:bg-slate-900 border border-white/10 text-[11px] text-slate-300 hover:text-cyan-300 flex items-center gap-1 backdrop-blur-xl transition cursor-pointer"
+              className="shrink-0 px-2.5 py-1 rounded-full theme-panel text-[11px] hover:opacity-90 flex items-center gap-1 transition cursor-pointer"
             >
-              <Wand2 className="w-3 h-3 text-cyan-400" />
+              <Wand2 className="w-3 h-3" style={{ color: "var(--theme-accent)" }} />
               <span className="max-w-[230px] truncate">{q}</span>
             </button>
           ))}
@@ -62,16 +62,16 @@ export default function GeminiOmniBar({
 
       {/* Selected Media Pill */}
       {selectedFile && (
-        <div className="self-start flex items-center gap-2 px-3 py-1 rounded-full bg-cyan-950/85 border border-cyan-400/40 text-xs text-cyan-200 backdrop-blur-xl">
-          <Film className="w-3.5 h-3.5 text-cyan-400" />
+        <div className="self-start flex items-center gap-2 px-3 py-1 rounded-full theme-panel text-xs">
+          <Film className="w-3.5 h-3.5" style={{ color: "var(--theme-accent)" }} />
           <span className="truncate max-w-[260px]">{selectedFile.name}</span>
-          <span className="text-[10px] text-cyan-400">
+          <span className="text-[10px]" style={{ color: "var(--theme-accent)" }}>
             ({(selectedFile.size / 1024 / 1024).toFixed(2)} MB)
           </span>
           <button
             type="button"
             onClick={() => setSelectedFile(null)}
-            className="hover:text-white"
+            className="hover:opacity-75"
           >
             <X className="w-3.5 h-3.5" />
           </button>
@@ -81,7 +81,7 @@ export default function GeminiOmniBar({
       {/* Main Gemini OmniBar Dock (Floating above Footer Timeline) */}
       <form
         onSubmit={handleSubmit}
-        className="flex items-center gap-2.5 px-4 py-2 rounded-3xl bg-slate-950/88 backdrop-blur-2xl border border-white/15 shadow-[0_20px_60px_rgba(0,0,0,0.85)] focus-within:border-cyan-400/60 transition"
+        className="flex items-center gap-2.5 px-4 py-2 theme-panel shadow-[0_20px_60px_rgba(0,0,0,0.45)] transition"
       >
         <input
           ref={fileInputRef}
@@ -97,7 +97,11 @@ export default function GeminiOmniBar({
           type="button"
           onClick={() => fileInputRef.current?.click()}
           title="Anexar vídeo/áudio (.mp4, .mp3, .wav) para PiP & transcrição Whisper"
-          className="p-2 rounded-2xl bg-white/5 hover:bg-white/10 text-slate-300 hover:text-cyan-300 border border-white/10 transition cursor-pointer"
+          className="p-2 rounded-2xl border transition cursor-pointer hover:opacity-85"
+          style={{
+            backgroundColor: "var(--theme-bg-2)",
+            borderColor: "var(--theme-border)",
+          }}
         >
           <Paperclip className="w-4 h-4" />
         </button>
@@ -107,13 +111,14 @@ export default function GeminiOmniBar({
           value={prompt}
           onChange={(e) => setPrompt(e.target.value)}
           placeholder="Descreva a pauta do programa, cole link/texto ou suba um vídeo para os 3 agentes produzirem..."
-          className="flex-1 bg-transparent text-sm text-white placeholder-slate-400 focus:outline-none"
+          className="flex-1 bg-transparent text-sm focus:outline-none"
+          style={{ color: "var(--theme-text)" }}
         />
 
         <button
           type="submit"
           disabled={isProducing || !prompt.trim()}
-          className="px-4 py-2 rounded-2xl bg-gradient-to-r from-cyan-500 via-blue-600 to-fuchsia-600 hover:opacity-95 disabled:opacity-50 text-xs font-bold uppercase tracking-wider text-white flex items-center gap-2 shadow-lg transition cursor-pointer"
+          className="px-4 py-2 rounded-2xl theme-accent-bg hover:opacity-95 disabled:opacity-50 text-xs font-bold uppercase tracking-wider flex items-center gap-2 shadow-lg transition cursor-pointer"
         >
           {isProducing ? (
             <>

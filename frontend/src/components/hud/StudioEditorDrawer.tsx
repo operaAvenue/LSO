@@ -301,24 +301,39 @@ export default function StudioEditorDrawer({
   };
 
   return (
-    <aside className="fixed top-20 left-5 z-40 w-[min(460px,94vw)] max-h-[calc(100vh-260px)] flex flex-col rounded-3xl bg-slate-950/90 backdrop-blur-2xl border border-white/15 shadow-[0_24px_80px_rgba(0,0,0,0.85)] text-slate-100 overflow-hidden select-none">
+    <aside className="fixed top-14 left-4 z-40 w-[min(460px,94vw)] max-h-[calc(100vh-250px)] flex flex-col theme-panel shadow-[0_24px_80px_rgba(0,0,0,0.65)] overflow-hidden select-none">
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-white/10 bg-white/5">
-        <div className="flex items-center gap-2 text-xs font-extrabold uppercase tracking-wider text-cyan-300">
-          <Box className="w-4 h-4 text-cyan-400" />
+      <div
+        className="flex items-center justify-between px-4 py-3 border-b"
+        style={{
+          borderColor: "var(--theme-border)",
+          backgroundColor: "var(--theme-bg-2)",
+        }}
+      >
+        <div
+          className="flex items-center gap-2 text-xs font-extrabold uppercase tracking-wider"
+          style={{ color: "var(--theme-accent)" }}
+        >
+          <Box className="w-4 h-4" />
           <span>Studio Editor 3D/2D & Scene Builder</span>
         </div>
         <button
           type="button"
           onClick={onClose}
-          className="p-1 rounded-full hover:bg-white/10 text-slate-400 hover:text-white transition cursor-pointer"
+          className="p-1 rounded-full hover:opacity-80 transition cursor-pointer"
         >
           <X className="w-4 h-4" />
         </button>
       </div>
 
       {/* Navigation Tabs */}
-      <div className="grid grid-cols-6 gap-1 p-1.5 bg-black/50 border-b border-white/10 text-[10px] font-bold">
+      <div
+        className="grid grid-cols-6 gap-1 p-1.5 border-b text-[10px] font-bold"
+        style={{
+          backgroundColor: "var(--theme-bg)",
+          borderColor: "var(--theme-border)",
+        }}
+      >
         {[
           { id: "OBJECTS" as const, icon: Box, label: "Cenário" },
           { id: "CHARACTERS" as const, icon: Users, label: "Elenco" },
@@ -336,8 +351,8 @@ export default function StudioEditorDrawer({
               onClick={() => onSelectTab(t.id)}
               className={`py-1.5 px-1 rounded-xl flex flex-col items-center justify-center gap-0.5 transition cursor-pointer ${
                 active
-                  ? "bg-cyan-500 text-slate-950 shadow"
-                  : "text-slate-400 hover:text-white hover:bg-white/5"
+                  ? "theme-accent-bg shadow"
+                  : "opacity-75 hover:opacity-100"
               }`}
             >
               <Icon className="w-3.5 h-3.5" />

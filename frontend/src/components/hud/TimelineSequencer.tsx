@@ -55,14 +55,23 @@ export default function TimelineSequencer({
   );
 
   return (
-    <footer className="fixed bottom-0 left-0 right-0 w-screen z-30 bg-slate-950/92 backdrop-blur-2xl border-t border-white/15 shadow-[0_-16px_50px_rgba(0,0,0,0.85)] select-none transition-all duration-200">
+    <footer
+      className="fixed bottom-0 left-0 right-0 w-screen z-30 theme-bar border-t shadow-[0_-16px_50px_rgba(0,0,0,0.45)] select-none transition-all duration-200"
+      style={{ borderColor: "var(--theme-border)" }}
+    >
       {/* Top Transport & Timecode Bar (Always visible at bottom footer, 100% width) */}
-      <div className="w-full px-4 py-2 flex flex-wrap items-center justify-between gap-3 border-b border-white/10 bg-black/40">
+      <div
+        className="w-full px-4 py-2 flex flex-wrap items-center justify-between gap-3 border-b"
+        style={{
+          borderColor: "var(--theme-border)",
+          backgroundColor: "var(--theme-bg-2)",
+        }}
+      >
         <div className="flex items-center gap-2.5">
           <button
             type="button"
             onClick={onTogglePlay}
-            className="px-3.5 py-1.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-xs flex items-center gap-1.5 transition cursor-pointer shadow"
+            className="px-3.5 py-1.5 rounded-xl theme-accent-bg hover:opacity-95 font-bold text-xs flex items-center gap-1.5 transition cursor-pointer shadow"
           >
             {isPlaying ? (
               <>
@@ -78,28 +87,39 @@ export default function TimelineSequencer({
           <button
             type="button"
             onClick={onRestart}
-            className="p-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 border border-white/10 transition cursor-pointer"
+            className="p-1.5 rounded-xl border transition cursor-pointer hover:opacity-85"
+            style={{
+              backgroundColor: "var(--theme-bg)",
+              borderColor: "var(--theme-border)",
+            }}
             title="Reiniciar Timeline (00:00)"
           >
             <RotateCcw className="w-3.5 h-3.5" />
           </button>
 
-          <div className="px-3 py-1 rounded-lg bg-slate-900 border border-cyan-500/30 font-mono text-xs text-cyan-300">
+          <div
+            className="px-3 py-1 rounded-lg border font-mono text-xs font-bold"
+            style={{
+              backgroundColor: "var(--theme-bg)",
+              borderColor: "var(--theme-border)",
+              color: "var(--theme-accent)",
+            }}
+          >
             TC {currentTime.toFixed(2)}s / {safeTotal.toFixed(2)}s
           </div>
 
           {currentAct && (
-            <span className="px-2.5 py-0.5 rounded-full bg-fuchsia-500/20 text-fuchsia-300 border border-fuchsia-500/30 text-[11px] font-mono">
+            <span className="px-2.5 py-0.5 rounded-full bg-fuchsia-500/20 text-fuchsia-400 border border-fuchsia-500/30 text-[11px] font-mono">
               ATO 0{currentAct.act_number} • {currentAct.speaker_name} •{" "}
               {currentAct.dominant_emotion}
             </span>
           )}
         </div>
 
-        <div className="flex items-center gap-3 text-[11px] font-mono text-slate-400">
+        <div className="flex items-center gap-3 text-[11px] font-mono opacity-85">
           <span className="hidden md:inline">
             EPISÓDIO:{" "}
-            <strong className="text-slate-200">
+            <strong>
               {manifest?.episode_title || "ESTÚDIO PRONTO"}
             </strong>
           </span>
@@ -107,7 +127,12 @@ export default function TimelineSequencer({
           <button
             type="button"
             onClick={onToggleOpen}
-            className="px-3 py-1 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-cyan-300 flex items-center gap-1.5 cursor-pointer transition"
+            className="px-3 py-1 rounded-lg border flex items-center gap-1.5 cursor-pointer transition hover:opacity-90 font-semibold"
+            style={{
+              backgroundColor: "var(--theme-bg)",
+              borderColor: "var(--theme-border)",
+              color: "var(--theme-accent)",
+            }}
           >
             <Layers className="w-3.5 h-3.5" />
             <span>{isOpen ? "Recolher Pistas" : "Expandir Pistas"}</span>
