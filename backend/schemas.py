@@ -1,6 +1,6 @@
 from __future__ import annotations
 from enum import Enum
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field
 
 
@@ -153,7 +153,7 @@ class EpisodeManifest(BaseModel):
 
 class RerunNodeRequest(BaseModel):
     episode_id: str
-    agent_id: str  # "marcus", "maya", "viktor", or "elevenlabs"
+    agent_id: str
     custom_prompt: str
     llm_provider: LLMProvider = LLMProvider.GEMINI
     voice_id: Optional[str] = None
@@ -169,3 +169,132 @@ class HiggsfieldDispatchRequest(BaseModel):
     episode_id: str
     act_number: int
     prompt: str
+
+
+# ============================================================================
+# 3D & 2D STUDIO SCENE EDITOR, CHARACTER CREATOR, LAYERS & LIGHTING CONTRACTS
+# ============================================================================
+
+class StudioLayer(BaseModel):
+    id: str
+    name: str
+    category: str = Field(default="scene", description="scene | characters | props | lights | overlays")
+    visible: bool = True
+    locked: bool = False
+    color_tag: str = "#38bdf8"
+
+
+class SceneObjectItem(BaseModel):
+    id: str
+    name: str
+    layer_id: str = "layer_props"
+    kind: str = Field(
+        default="primitive",
+        description="imported_model | anchor_desk | studio_camera | led_wall | teleprompter | sofa | plant | podium | truss | cube | cylinder | plane | sprite_2d",
+    )
+    format: Optional[str] = Field(default=None, description="glb | gltf | obj | fbx | stl | dae | ply | png | svg")
+    asset_url: Optional[str] = None
+    position: List[float] = Field(default_factory=lambda: [0.0, 0.0, 0.0])
+    rotation: List[float] = Field(default_factory=lambda: [0.0, 0.0, 0.0])
+    scale: List[float] = Field(default_factory=lambda: [1.0, 1.0, 1.0])
+    color: str = "#1e293b"
+    emissive: str = "#000000"
+    emissive_intensity: float = 0.0
+    metalness: float = 0.4
+    roughness: float = 0.45
+    cast_shadow: bool = True
+    receive_shadow: bool = True
+    visible: bool = True
+    locked: bool = False
+
+
+class CharacterSpec(BaseModel):
+    id: str
+    name: str
+    role: str = "Âncora Principal"
+    layer_id: str = "layer_characters"
+    mode: str = Field(default="BOTH", description="3D | 2D_SOUTHPARK | BOTH")
+    voice_id: str = "pNInz6obpgDQGcFmaJgB"
+    position: List[float] = Field(default_factory=lambda: [0.0, 0.0, 0.0])
+    rotation: List[float] = Field(default_factory=lambda: [0.0, 0.0, 0.0])
+    scale: float = 1.0
+    skin_color: str = "#ecc5a8"
+    suit_color: str = "#1e293b"
+    shirt_color: str = "#f8fafc"
+    tie_color: str = "#00f0ff"
+    hair_style: str = Field(default="executive", description="executive | spiky | curly | mohawk | bob | bald")
+    hair_color: str = "#0f172a"
+    hat_style: str = Field(default="none", description="none | beanie | cap | fedora | headphones | crown")
+    hat_color: str = "#0ea5e9"
+    glasses: bool = False
+    glove_color: str = "#16a34a"
+    eye_scale: float = 1.0
+    custom_3d_model_url: Optional[str] = None
+    custom_3d_format: Optional[str] = None
+    custom_2d_head_url: Optional[str] = None
+    custom_2d_body_url: Optional[str] = None
+    visible: bool = True
+    locked: bool = False
+    is_active_speaker: bool = True
+
+
+class StudioLightConfig(BaseModel):
+    preset: str = "cyber_newsroom"
+    ambient_intensity: float = 0.65
+    ambient_color: str = "#ffffff"
+    key_intensity: float = 2.2
+    key_color: str = "#ffffff"
+    key_position: List[float] = Field(default_factory=lambda: [2.5, 4.2, 3.5])
+    fill_intensity: float = 1.4
+    fill_color: str = "#38bdf8"
+    fill_position: List[float] = Field(default_factory=lambda: [2.8, 1.8, -1.2])
+    rim_intensity: float = 3.2
+    rim_color: str = "#00f0ff"
+    rim_position: List[float] = Field(default_factory=lambda: [-3.2, 3.0, -1.5])
+    background_top: str = "#05070f"
+    background_bottom: str = "#04060c"
+    cyclorama_color: str = "#050814"
+    fog_enabled: bool = True
+    fog_color: str = "#05070f"
+    fog_near: float = 5.0
+    fog_far: float = 18.0
+
+
+class CameraBookmark(BaseModel):
+    id: str
+    name: str
+    position: List[float] = Field(default_factory=lambda: [0.0, 1.15, 3.35])
+    target: List[float] = Field(default_factory=lambda: [0.0, 0.85, 0.0])
+    fov: float = 42.0
+    dutch_roll: float = 0.0
+
+
+class ViewportQualityConfig(BaseModel):
+    preset: str = Field(default="BALANCED", description="ULTRA_AAA | BALANCED | PERFORMANCE_60FPS | POTATO_LOW")
+    dpr_min: float = 1.0
+    dpr_max: float = 1.5
+    shadows: bool = True
+    shadow_map_size: int = 1024
+    antialias: bool = True
+    contact_shadows: bool = True
+    wireframe_debug: bool = False
+    show_grid: bool = True
+    show_axes: bool = False
+    show_light_helpers: bool = False
+
+
+class StudioProjectState(BaseModel):
+    project_id: str
+    name: str
+    updated_at: str
+    selected_program: TVProgramType = TVProgramType.PLANTAO_NEURAL_24H
+    render_stage_mode: str = "3D"
+    layers: List[StudioLayer] = Field(default_factory=list)
+    scene_objects: List[SceneObjectItem] = Field(default_factory=list)
+    characters: List[CharacterSpec] = Field(default_factory=list)
+    lighting: StudioLightConfig = Field(default_factory=StudioLightConfig)
+    cameras: List[CameraBookmark] = Field(default_factory=list)
+    active_camera_id: str = "cam_master"
+    quality: ViewportQualityConfig = Field(default_factory=ViewportQualityConfig)
+    active_episode_id: Optional[str] = None
+    extra_metadata: Dict[str, Any] = Field(default_factory=dict)

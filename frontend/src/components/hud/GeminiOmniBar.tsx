@@ -7,8 +7,6 @@ import {
   Loader2,
   Film,
   X,
-  ChevronUp,
-  ChevronDown,
   Wand2,
 } from "lucide-react";
 
@@ -16,7 +14,6 @@ interface GeminiOmniBarProps {
   onProduce: (prompt: string, mediaFile: File | null) => Promise<void>;
   isProducing: boolean;
   timelineOpen: boolean;
-  onToggleTimeline: () => void;
 }
 
 const QUICK_PROMPTS = [
@@ -29,7 +26,6 @@ export default function GeminiOmniBar({
   onProduce,
   isProducing,
   timelineOpen,
-  onToggleTimeline,
 }: GeminiOmniBarProps) {
   const [prompt, setPrompt] = useState<string>(QUICK_PROMPTS[0]);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -42,8 +38,12 @@ export default function GeminiOmniBar({
   };
 
   return (
-    <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-40 w-[min(860px,95vw)] flex flex-col gap-1.5">
-      {/* Quick Prompt Chips & Timeline Toggle */}
+    <div
+      className={`fixed left-1/2 -translate-x-1/2 z-40 w-[min(880px,94vw)] flex flex-col gap-1.5 transition-all duration-200 ${
+        timelineOpen ? "bottom-[172px]" : "bottom-14"
+      }`}
+    >
+      {/* Quick Prompt Chips */}
       <div className="flex items-center justify-between gap-2 px-2">
         <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5">
           {QUICK_PROMPTS.map((q, idx) => (
@@ -51,34 +51,18 @@ export default function GeminiOmniBar({
               key={idx}
               type="button"
               onClick={() => setPrompt(q)}
-              className="shrink-0 px-2.5 py-1 rounded-full bg-slate-950/75 hover:bg-slate-900 border border-white/10 text-[11px] text-slate-300 hover:text-cyan-300 flex items-center gap-1 backdrop-blur-xl transition"
+              className="shrink-0 px-2.5 py-1 rounded-full bg-slate-950/80 hover:bg-slate-900 border border-white/10 text-[11px] text-slate-300 hover:text-cyan-300 flex items-center gap-1 backdrop-blur-xl transition cursor-pointer"
             >
               <Wand2 className="w-3 h-3 text-cyan-400" />
-              <span className="max-w-[210px] truncate">{q}</span>
+              <span className="max-w-[230px] truncate">{q}</span>
             </button>
           ))}
         </div>
-
-        <button
-          type="button"
-          onClick={onToggleTimeline}
-          className="shrink-0 px-3 py-1 rounded-full bg-slate-950/80 hover:bg-slate-900 border border-white/15 text-[11px] font-mono text-cyan-300 flex items-center gap-1 backdrop-blur-xl"
-        >
-          {timelineOpen ? (
-            <>
-              <ChevronDown className="w-3.5 h-3.5" /> Ocultar Timeline
-            </>
-          ) : (
-            <>
-              <ChevronUp className="w-3.5 h-3.5" /> Abrir Timeline
-            </>
-          )}
-        </button>
       </div>
 
       {/* Selected Media Pill */}
       {selectedFile && (
-        <div className="self-start flex items-center gap-2 px-3 py-1 rounded-full bg-cyan-950/80 border border-cyan-400/40 text-xs text-cyan-200 backdrop-blur-xl">
+        <div className="self-start flex items-center gap-2 px-3 py-1 rounded-full bg-cyan-950/85 border border-cyan-400/40 text-xs text-cyan-200 backdrop-blur-xl">
           <Film className="w-3.5 h-3.5 text-cyan-400" />
           <span className="truncate max-w-[260px]">{selectedFile.name}</span>
           <span className="text-[10px] text-cyan-400">
@@ -94,10 +78,10 @@ export default function GeminiOmniBar({
         </div>
       )}
 
-      {/* Main Gemini OmniBar Dock */}
+      {/* Main Gemini OmniBar Dock (Floating above Footer Timeline) */}
       <form
         onSubmit={handleSubmit}
-        className="flex items-center gap-2.5 px-4 py-2.5 rounded-3xl bg-slate-950/85 backdrop-blur-2xl border border-white/15 shadow-[0_20px_60px_rgba(0,0,0,0.75)] focus-within:border-cyan-400/60 transition"
+        className="flex items-center gap-2.5 px-4 py-2 rounded-3xl bg-slate-950/88 backdrop-blur-2xl border border-white/15 shadow-[0_20px_60px_rgba(0,0,0,0.85)] focus-within:border-cyan-400/60 transition"
       >
         <input
           ref={fileInputRef}
@@ -113,7 +97,7 @@ export default function GeminiOmniBar({
           type="button"
           onClick={() => fileInputRef.current?.click()}
           title="Anexar vídeo/áudio (.mp4, .mp3, .wav) para PiP & transcrição Whisper"
-          className="p-2 rounded-2xl bg-white/5 hover:bg-white/10 text-slate-300 hover:text-cyan-300 border border-white/10 transition"
+          className="p-2 rounded-2xl bg-white/5 hover:bg-white/10 text-slate-300 hover:text-cyan-300 border border-white/10 transition cursor-pointer"
         >
           <Paperclip className="w-4 h-4" />
         </button>

@@ -12,20 +12,39 @@ import TopStitchPill, {
 import GeminiOmniBar from "@/components/hud/GeminiOmniBar";
 import TimelineSequencer from "@/components/hud/TimelineSequencer";
 import FloatingDrawers from "@/components/hud/FloatingDrawers";
+import StudioEditorDrawer, {
+  StudioEditorTab,
+} from "@/components/hud/StudioEditorDrawer";
 import {
   ApiVaultState,
+  CameraBookmark,
+  CharacterSpec,
+  DEFAULT_CAMERAS,
+  DEFAULT_CHARACTERS,
+  DEFAULT_LIGHTING,
+  DEFAULT_QUALITY,
+  DEFAULT_SCENE_OBJECTS,
+  DEFAULT_STUDIO_LAYERS,
   EpisodeManifest,
   LLMProvider,
   ProducedAct,
   RigKeyframe,
+  SceneObjectItem,
+  StudioLayer,
+  StudioLightConfig,
+  StudioProjectState,
   TVProgramType,
+  ViewportQualityConfig,
   bakeRigKeyframe,
+  deleteStudioProject,
   dispatchHiggsfield,
   fetchEpisodes,
   fetchHealth,
+  fetchStudioProjects,
   produceEpisode,
   rerunAgentNode,
   resolveBackendAssetUrl,
+  saveStudioProject,
 } from "@/lib/api";
 import { Maximize2, Minimize2, Video } from "lucide-react";
 
@@ -43,20 +62,50 @@ const DEFAULT_POSE: RigKeyframe = {
 
 export default function AITVStudioWorkspace() {
   // Spatial Workspace States
-  const [selectedProgram, setSelectedProgram] = useState<TVProgramType>("Plantão Neural 24h");
+  const [selectedProgram, setSelectedProgram] =
+    useState<TVProgramType>("Plantão Neural 24h");
   const [llmProvider, setLlmProvider] = useState<LLMProvider>("squad_mode");
   const [layoutMode, setLayoutMode] = useState<WorkspaceLayoutMode>("STAGE");
-  const [renderStageMode, setRenderStageMode] = useState<RenderStageMode>("3D");
+  const [renderStageMode, setRenderStageMode] =
+    useState<RenderStageMode>("3D");
   const [activeDrawer, setActiveDrawer] = useState<ActiveDrawerType>(null);
   const [timelineOpen, setTimelineOpen] = useState<boolean>(true);
+
+  // Studio Scene Editor States (3D/2D Objects, Characters, Layers, Lights, Cameras, Quality, Projects)
+  const [studioEditorOpen, setStudioEditorOpen] = useState<boolean>(false);
+  const [studioEditorTab, setStudioEditorTab] =
+    useState<StudioEditorTab>("OBJECTS");
+  const [projectId, setProjectId] = useState<string>("proj_redebot_main");
+  const [projectName, setProjectName] = useState<string>(
+    "Estúdio Principal Redebot TV"
+  );
+  const [layers, setLayers] = useState<StudioLayer[]>(DEFAULT_STUDIO_LAYERS);
+  const [sceneObjects, setSceneObjects] = useState<SceneObjectItem[]>(
+    DEFAULT_SCENE_OBJECTS
+  );
+  const [characters, setCharacters] =
+    useState<CharacterSpec[]>(DEFAULT_CHARACTERS);
+  const [lighting, setLighting] = useState<StudioLightConfig>(DEFAULT_LIGHTING);
+  const [cameras, setCameras] = useState<CameraBookmark[]>(DEFAULT_CAMERAS);
+  const [activeCameraId, setActiveCameraId] = useState<string>("cam_master");
+  const [quality, setQuality] = useState<ViewportQualityConfig>(DEFAULT_QUALITY);
+  const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
+  const [transformMode, setTransformMode] = useState<
+    "translate" | "rotate" | "scale"
+  >("translate");
+  const [savedProjects, setSavedProjects] = useState<StudioProjectState[]>([]);
 
   // Episode & Production States
   const [manifest, setManifest] = useState<EpisodeManifest | null>(null);
   const [isProducing, setIsProducing] = useState<boolean>(false);
   const [isRerunning, setIsRerunning] = useState<boolean>(false);
   const [selectedAgentId, setSelectedAgentId] = useState<string>("marcus");
-  const [defaultPrompts, setDefaultPrompts] = useState<Record<string, string>>({});
-  const [providerStatus, setProviderStatus] = useState<Record<string, boolean>>({});
+  const [defaultPrompts, setDefaultPrompts] = useState<Record<string, string>>(
+    {}
+  );
+  const [providerStatus, setProviderStatus] = useState<Record<string, boolean>>(
+    {}
+  );
   const [errorBanner, setErrorBanner] = useState<string | null>(null);
 
   // API Vault State (persisted in localStorage)
@@ -76,7 +125,9 @@ export default function AITVStudioWorkspace() {
   const [audioAmplitude, setAudioAmplitude] = useState<number>(0);
   const [livePose, setLivePose] = useState<RigKeyframe>(DEFAULT_POSE);
   const [pipLarge, setPipLarge] = useState<boolean>(false);
-  const [localPreviewVideoUrl, setLocalPreviewVideoUrl] = useState<string | null>(null);
+  const [localPreviewVideoUrl, setLocalPreviewVideoUrl] = useState<
+    string | null
+  >(null);
 
   const audioElRef = useRef<HTMLAudioElement | null>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
@@ -90,13 +141,22 @@ export default function AITVStudioWorkspace() {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const recordedChunksRef = useRef<Blob[]>([]);
 
-  // Load saved Vault keys from localStorage on mount & fetch health + latest episode
   useEffect(() => {
     try {
       const raw = localStorage.getItem("aitv_vault_v2");
       if (raw) {
         const parsed = JSON.parse(raw);
         setVault((prev) => ({ ...prev, ...parsed }));
+      }
+      const savedLocalScene = localStorage.getItem("aitv_studio_project_v25");
+      if (savedLocalScene) {
+        const proj: StudioProjectState = JSON.parse(savedLocalScene);
+        if (proj.layers?.length) setLayers(proj.layers);
+        if (proj.scene_objects?.length) setSceneObjects(proj.scene_objects);
+        if (proj.characters?.length) setCharacters(proj.characters);
+        if (proj.lighting) setLighting(proj.lighting);
+        if (proj.cameras?.length) setCameras(proj.cameras);
+        if (proj.quality) setQuality(proj.quality);
       }
     } catch {
       // ignore storage errors
@@ -113,8 +173,14 @@ export default function AITVStudioWorkspace() {
     }
   }, []);
 
+  const refreshSavedProjects = useCallback(async () => {
+    const list = await fetchStudioProjects();
+    setSavedProjects(list);
+  }, []);
+
   useEffect(() => {
     syncHealth(vault);
+    refreshSavedProjects();
     fetchEpisodes()
       .then((list) => {
         if (list.length > 0) {
@@ -122,7 +188,9 @@ export default function AITVStudioWorkspace() {
           setManifest(latest);
           setSelectedProgram(latest.selected_program);
           setRenderStageMode(
-            latest.visual_mode_recommendation === "2D_SOUTHPARK" ? "2D_SOUTHPARK" : "3D"
+            latest.visual_mode_recommendation === "2D_SOUTHPARK"
+              ? "2D_SOUTHPARK"
+              : "3D"
           );
           if (latest.acts?.[0]?.rig_keyframe) {
             setLivePose(latest.acts[0].rig_keyframe);
@@ -130,7 +198,15 @@ export default function AITVStudioWorkspace() {
         }
       })
       .catch(() => {});
-  }, [syncHealth, vault]);
+  }, [syncHealth, refreshSavedProjects, vault]);
+
+  const activeCamera: CameraBookmark = useMemo(
+    () =>
+      cameras.find((c) => c.id === activeCameraId) ||
+      cameras[0] ||
+      DEFAULT_CAMERAS[0],
+    [cameras, activeCameraId]
+  );
 
   // Determine current Act based on timeline playhead
   const currentAct: ProducedAct | null = useMemo(() => {
@@ -141,7 +217,6 @@ export default function AITVStudioWorkspace() {
     return found || manifest.acts[manifest.acts.length - 1];
   }, [manifest, currentTime]);
 
-  // Update livePose when crossing into a new Act
   useEffect(() => {
     if (currentAct?.rig_keyframe) {
       setLivePose(currentAct.rig_keyframe);
@@ -154,7 +229,8 @@ export default function AITVStudioWorkspace() {
     if (!audioCtxRef.current) {
       const AudioContextCls =
         window.AudioContext ||
-        (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+        (window as unknown as { webkitAudioContext: typeof AudioContext })
+          .webkitAudioContext;
       const ctx = new AudioContextCls();
       const analyser = ctx.createAnalyser();
       analyser.fftSize = 256;
@@ -174,7 +250,7 @@ export default function AITVStudioWorkspace() {
     }
   }, []);
 
-  // Master playback loop: synchronizes Timeline Playhead, ElevenLabs MP3 HTMLAudioElement, AnalyserNode FFT, and PiP Video
+  // Master playback loop
   useEffect(() => {
     if (!isPlaying || !manifest) {
       setAudioAmplitude(0);
@@ -206,11 +282,9 @@ export default function AITVStudioWorkspace() {
         return nextTime;
       });
 
-      // Read real-time frequency energy from ElevenLabs MP3 via AnalyserNode
       if (analyserRef.current) {
         analyserRef.current.getByteFrequencyData(freqBins);
         let sum = 0;
-        // Focus on vocal fundamental & formant bands (bins 2..48)
         for (let i = 2; i < 48; i++) {
           sum += freqBins[i];
         }
@@ -240,7 +314,11 @@ export default function AITVStudioWorkspace() {
       if (isPlaying) {
         audioEl.play().catch(() => {});
       }
-    } else if (isPlaying && audioEl.paused && offsetWithinAct < currentAct.duration_seconds - 0.15) {
+    } else if (
+      isPlaying &&
+      audioEl.paused &&
+      offsetWithinAct < currentAct.duration_seconds - 0.15
+    ) {
       audioEl.currentTime = offsetWithinAct;
       audioEl.play().catch(() => {});
     }
@@ -273,7 +351,10 @@ export default function AITVStudioWorkspace() {
           activeAudioSrcRef.current = fullUrl;
           audioElRef.current.src = fullUrl;
         }
-        audioElRef.current.currentTime = Math.max(0, targetSeconds - targetAct.start_time);
+        audioElRef.current.currentTime = Math.max(
+          0,
+          targetSeconds - targetAct.start_time
+        );
       }
     }
   };
@@ -296,7 +377,9 @@ export default function AITVStudioWorkspace() {
       setManifest(created);
       setSelectedProgram(created.selected_program);
       setRenderStageMode(
-        created.visual_mode_recommendation === "2D_SOUTHPARK" ? "2D_SOUTHPARK" : "3D"
+        created.visual_mode_recommendation === "2D_SOUTHPARK"
+          ? "2D_SOUTHPARK"
+          : "3D"
       );
       setCurrentTime(0);
       if (created.acts?.[0]?.rig_keyframe) {
@@ -345,6 +428,85 @@ export default function AITVStudioWorkspace() {
     setManifest(updated);
   };
 
+  const buildCurrentProjectPayload = useCallback((): StudioProjectState => {
+    return {
+      project_id: projectId || `proj_${Date.now().toString().slice(-6)}`,
+      name: projectName || "Estúdio Redebot",
+      updated_at: new Date().toISOString(),
+      selected_program: selectedProgram,
+      render_stage_mode: renderStageMode,
+      layers,
+      scene_objects: sceneObjects,
+      characters,
+      lighting,
+      cameras,
+      active_camera_id: activeCameraId,
+      quality,
+      active_episode_id: manifest?.episode_id || null,
+    };
+  }, [
+    projectId,
+    projectName,
+    selectedProgram,
+    renderStageMode,
+    layers,
+    sceneObjects,
+    characters,
+    lighting,
+    cameras,
+    activeCameraId,
+    quality,
+    manifest?.episode_id,
+  ]);
+
+  const handleSaveStudioProject = async () => {
+    const payload = buildCurrentProjectPayload();
+    try {
+      localStorage.setItem("aitv_studio_project_v25", JSON.stringify(payload));
+    } catch {
+      // ignore
+    }
+    const saved = await saveStudioProject(payload);
+    setProjectId(saved.project_id);
+    await refreshSavedProjects();
+  };
+
+  const handleLoadStudioProject = (proj: StudioProjectState) => {
+    setProjectId(proj.project_id);
+    setProjectName(proj.name);
+    setSelectedProgram(proj.selected_program);
+    setRenderStageMode(proj.render_stage_mode);
+    if (proj.layers?.length) setLayers(proj.layers);
+    if (proj.scene_objects) setSceneObjects(proj.scene_objects);
+    if (proj.characters?.length) setCharacters(proj.characters);
+    if (proj.lighting) setLighting(proj.lighting);
+    if (proj.cameras?.length) setCameras(proj.cameras);
+    if (proj.active_camera_id) setActiveCameraId(proj.active_camera_id);
+    if (proj.quality) setQuality(proj.quality);
+  };
+
+  const handleExportProjectJson = () => {
+    const payload = buildCurrentProjectPayload();
+    const blob = new Blob([JSON.stringify(payload, null, 2)], {
+      type: "application/json",
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${payload.project_id}.json`;
+    a.click();
+  };
+
+  const handleImportProjectJson = async (file: File) => {
+    try {
+      const text = await file.text();
+      const parsed: StudioProjectState = JSON.parse(text);
+      handleLoadStudioProject(parsed);
+    } catch {
+      setErrorBanner("Arquivo JSON de projeto inválido.");
+    }
+  };
+
   const handleToggleDrawer = (drawer: Exclude<ActiveDrawerType, null>) => {
     setActiveDrawer((prev) => (prev === drawer ? null : drawer));
   };
@@ -358,7 +520,9 @@ export default function AITVStudioWorkspace() {
 
     const canvas = document.querySelector("canvas");
     if (!canvas) {
-      setErrorBanner("Mude para o Modo Palco 3D para gravar o canvas via MediaRecorder.");
+      setErrorBanner(
+        "Mude para o Modo Palco 3D para gravar o canvas via MediaRecorder."
+      );
       return;
     }
     const stream = canvas.captureStream(30);
@@ -408,6 +572,15 @@ export default function AITVStudioWorkspace() {
         onSelectRenderStageMode={setRenderStageMode}
         activeDrawer={activeDrawer}
         onToggleDrawer={handleToggleDrawer}
+        studioEditorOpen={studioEditorOpen}
+        onOpenStudioEditorTab={(tab) => {
+          if (studioEditorOpen && studioEditorTab === tab) {
+            setStudioEditorOpen(false);
+          } else {
+            setStudioEditorTab(tab);
+            setStudioEditorOpen(true);
+          }
+        }}
         providerStatus={providerStatus}
       />
 
@@ -425,12 +598,14 @@ export default function AITVStudioWorkspace() {
         </div>
       )}
 
-      {/* 100vw x 100vh Unobstructed Spatial Canvas (Stage / Split 50-50 / Node Graph) */}
+      {/* 100vw x 100vh Unobstructed Spatial Canvas */}
       <div className="w-full h-full flex">
         {(layoutMode === "STAGE" || layoutMode === "SPLIT") && (
           <div
             className={`h-full relative ${
-              layoutMode === "SPLIT" ? "w-1/2 border-r border-white/10" : "w-full"
+              layoutMode === "SPLIT"
+                ? "w-1/2 border-r border-white/10"
+                : "w-full"
             }`}
           >
             {renderStageMode === "3D" ? (
@@ -444,6 +619,33 @@ export default function AITVStudioWorkspace() {
                 }
                 programTitle={manifest?.selected_program || selectedProgram}
                 isPlaying={isPlaying}
+                timelineOpen={timelineOpen}
+                layers={layers}
+                sceneObjects={sceneObjects}
+                characters={characters}
+                lighting={lighting}
+                activeCamera={activeCamera}
+                quality={quality}
+                selectedItemId={selectedItemId}
+                onSelectItem={(id) => {
+                  setSelectedItemId(id);
+                  if (id && !studioEditorOpen) {
+                    setStudioEditorTab(
+                      id.startsWith("char_") ? "CHARACTERS" : "OBJECTS"
+                    );
+                    setStudioEditorOpen(true);
+                  }
+                }}
+                transformMode={transformMode}
+                onUpdateObjectTransform={(id, pos, rot, scl) => {
+                  setSceneObjects((prev) =>
+                    prev.map((o) =>
+                      o.id === id
+                        ? { ...o, position: pos, rotation: rot, scale: scl }
+                        : o
+                    )
+                  );
+                }}
               />
             ) : (
               <StageSouthPark
@@ -456,6 +658,21 @@ export default function AITVStudioWorkspace() {
                 }
                 programTitle={manifest?.selected_program || selectedProgram}
                 isPlaying={isPlaying}
+                timelineOpen={timelineOpen}
+                layers={layers}
+                sceneObjects={sceneObjects}
+                characters={characters}
+                lighting={lighting}
+                selectedItemId={selectedItemId}
+                onSelectItem={(id) => {
+                  setSelectedItemId(id);
+                  if (id && !studioEditorOpen) {
+                    setStudioEditorTab(
+                      id.startsWith("char_") ? "CHARACTERS" : "OBJECTS"
+                    );
+                    setStudioEditorOpen(true);
+                  }
+                }}
               />
             )}
           </div>
@@ -476,10 +693,47 @@ export default function AITVStudioWorkspace() {
         )}
       </div>
 
-      {/* Resizable Picture-in-Picture (PiP) Input Video Monitor synchronized with Timeline */}
+      {/* Left Floating Studio Scene & Character Editor Drawer */}
+      <StudioEditorDrawer
+        isOpen={studioEditorOpen}
+        activeTab={studioEditorTab}
+        onSelectTab={setStudioEditorTab}
+        onClose={() => setStudioEditorOpen(false)}
+        layers={layers}
+        onChangeLayers={setLayers}
+        sceneObjects={sceneObjects}
+        onChangeSceneObjects={setSceneObjects}
+        characters={characters}
+        onChangeCharacters={setCharacters}
+        lighting={lighting}
+        onChangeLighting={setLighting}
+        cameras={cameras}
+        onChangeCameras={setCameras}
+        activeCameraId={activeCameraId}
+        onSelectCameraId={setActiveCameraId}
+        quality={quality}
+        onChangeQuality={setQuality}
+        selectedItemId={selectedItemId}
+        onSelectItem={setSelectedItemId}
+        transformMode={transformMode}
+        onChangeTransformMode={setTransformMode}
+        projectName={projectName}
+        onChangeProjectName={setProjectName}
+        savedProjects={savedProjects}
+        onSaveProject={handleSaveStudioProject}
+        onLoadProject={handleLoadStudioProject}
+        onDeleteProject={async (id) => {
+          await deleteStudioProject(id);
+          await refreshSavedProjects();
+        }}
+        onExportProjectJson={handleExportProjectJson}
+        onImportProjectJson={handleImportProjectJson}
+      />
+
+      {/* Resizable Picture-in-Picture (PiP) Input Video Monitor */}
       {pipVideoSrc && (
         <div
-          className={`fixed left-6 top-36 z-30 rounded-2xl overflow-hidden bg-slate-950/90 border border-cyan-400/40 shadow-2xl backdrop-blur-xl transition-all ${
+          className={`fixed right-6 top-20 z-30 rounded-2xl overflow-hidden bg-slate-950/90 border border-cyan-400/40 shadow-2xl backdrop-blur-xl transition-all ${
             pipLarge ? "w-96 h-60" : "w-60 h-36"
           }`}
         >
@@ -509,7 +763,7 @@ export default function AITVStudioWorkspace() {
         </div>
       )}
 
-      {/* Contextual Glassmorphism Floating Drawers */}
+      {/* Right Contextual Glassmorphism Floating Drawers (Rig Puppeteer, Inspector, Outputs, Vault) */}
       <FloatingDrawers
         activeDrawer={activeDrawer}
         onClose={() => setActiveDrawer(null)}
@@ -550,10 +804,18 @@ export default function AITVStudioWorkspace() {
         llmProvider={llmProvider}
       />
 
-      {/* Retractable Multi-Track Timeline Sequencer */}
+      {/* Gemini OmniBar Floating ABOVE the Full-Width Footer Timeline */}
+      <GeminiOmniBar
+        onProduce={handleProduce}
+        isProducing={isProducing}
+        timelineOpen={timelineOpen}
+      />
+
+      {/* Full-Width Left-to-Right Footer Timeline Sequencer (100% Horizontal Width) */}
       <TimelineSequencer
         manifest={manifest}
         isOpen={timelineOpen}
+        onToggleOpen={() => setTimelineOpen((prev) => !prev)}
         isPlaying={isPlaying}
         currentTime={currentTime}
         totalDuration={manifest?.total_duration_seconds || 12}
@@ -564,14 +826,6 @@ export default function AITVStudioWorkspace() {
           handleSeek(0);
           setIsPlaying(true);
         }}
-      />
-
-      {/* Gemini OmniBar Multimodal Input Dock */}
-      <GeminiOmniBar
-        onProduce={handleProduce}
-        isProducing={isProducing}
-        timelineOpen={timelineOpen}
-        onToggleTimeline={() => setTimelineOpen((prev) => !prev)}
       />
     </main>
   );

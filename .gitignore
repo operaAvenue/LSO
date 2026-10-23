@@ -6,6 +6,8 @@ venv/
 backend/outputs/audio/*.mp3
 backend/outputs/manifests/*.json
 backend/outputs/uploads/*
+backend/outputs/assets/*
+backend/outputs/projects/*.json
 
 # Node / Next.js
 node_modules/

@@ -2,6 +2,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 import json
 import os
+import re
 import time
 import uuid
 from pathlib import Path
@@ -37,15 +38,36 @@ from schemas import (
     HiggsfieldDispatchRequest,
     LLMProvider,
     RerunNodeRequest,
+    StudioProjectState,
 )
 
 load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 load_dotenv(Path(__file__).resolve().parent / ".env")
 
+ASSETS_DIR = OUTPUTS_DIR / "assets"
+PROJECTS_DIR = OUTPUTS_DIR / "projects"
+for d in (ASSETS_DIR, PROJECTS_DIR):
+    d.mkdir(parents=True, exist_ok=True)
+
+SUPPORTED_ASSET_EXTENSIONS = {
+    ".glb",
+    ".gltf",
+    ".obj",
+    ".fbx",
+    ".stl",
+    ".dae",
+    ".ply",
+    ".png",
+    ".jpg",
+    ".jpeg",
+    ".webp",
+    ".svg",
+}
+
 app = FastAPI(
     title="AI-TV Studio Orchestrator API",
-    version="2.0.0",
-    description="Multi-Agent Generative TV Broadcast Orchestrator (Marcus Vance, Maya Lin, Viktor K.) + ElevenLabs + Higgsfield + Blender Bridge",
+    version="2.5.0",
+    description="Multi-Agent Generative TV Broadcast Orchestrator + 3D/2D Studio Editor + Multi-Format 3D Importer + Character Builder",
 )
 
 app.add_middleware(
@@ -109,6 +131,7 @@ async def health_check(
     return {
         "status": "online",
         "service": "AI-TV Studio Orchestrator",
+        "version": "2.5.0",
         "providers": {
             "gemini": bool(keys.get_key(LLMProvider.GEMINI)),
             "chatgpt": bool(keys.get_key(LLMProvider.CHATGPT)),
@@ -122,6 +145,8 @@ async def health_check(
             "maya": MAYA_SYSTEM_PROMPT,
             "viktor": VIKTOR_SYSTEM_PROMPT,
         },
+        "supported_3d_formats": ["glb", "gltf", "obj", "fbx", "stl", "dae", "ply"],
+        "supported_2d_formats": ["png", "svg", "webp", "jpg"],
     }
 
 
@@ -244,10 +269,6 @@ async def rerun_agent_node(
     x_elevenlabs_key: Optional[str] = Header(default=None),
     x_higgsfield_key: Optional[str] = Header(default=None),
 ) -> EpisodeManifest:
-    """
-    Allows clicking any node in @xyflow/react, overriding its system prompt or instruction,
-    and reprocessing the broadcast pipeline from that point with updated audio/keyframes.
-    """
     existing = _load_manifest(req.episode_id)
     keys = _extract_vault_keys(
         x_gemini_key, x_openai_key, x_anthropic_key, x_xai_key, x_elevenlabs_key, x_higgsfield_key
@@ -261,7 +282,6 @@ async def rerun_agent_node(
 
     base_prompt = f"{existing.episode_title} — {existing.editorial_thesis}"
     if req.agent_id == "elevenlabs":
-        # Re-synthesize MP3 audio with updated voice settings
         synchronized_acts, total_duration, audio_source = await synchronize_episode_timeline(
             episode_id=existing.episode_id,
             acts=existing.acts,
@@ -330,9 +350,6 @@ async def rerun_agent_node(
 
 @app.post("/api/v1/bake-keyframe", response_model=EpisodeManifest)
 async def bake_rig_keyframe(req: BakeKeyframeRequest) -> EpisodeManifest:
-    """
-    Persists manual IK/FK Rig Puppeteer slider adjustments directly into the EpisodeManifest JSON on disk.
-    """
     manifest = _load_manifest(req.episode_id)
     found = False
     for act in manifest.acts:
@@ -352,9 +369,6 @@ async def trigger_higgsfield_webhook(
     x_higgsfield_key: Optional[str] = Header(default=None),
     x_higgsfield_webhook: Optional[str] = Header(default=None),
 ) -> Dict[str, object]:
-    """
-    Sends the act's cinematic prompt to the Higgsfield API / Webhook and updates the episode manifest.
-    """
     manifest = _load_manifest(req.episode_id)
     try:
         result = await dispatch_higgsfield_generation(
@@ -382,3 +396,96 @@ async def export_blender_script(episode_id: str) -> PlainTextResponse:
         "Content-Disposition": f'attachment; filename="blender_bridge_{episode_id}.py"'
     }
     return PlainTextResponse(content=script_code, headers=headers)
+
+
+# ============================================================================
+# 3D / 2D ASSET IMPORTER & STUDIO SCENE PROJECT PERSISTENCE ENDPOINTS
+# ============================================================================
+
+@app.post("/api/v1/assets/upload")
+async def upload_studio_asset(file: UploadFile = File(...)) -> Dict[str, object]:
+    """
+    Uploads a 3D model (.glb, .gltf, .obj, .fbx, .stl, .dae, .ply) or 2D cutout sprite
+    (.png, .svg, .webp, .jpg) to backend/outputs/assets/ for use in the Studio Scene Editor.
+    """
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="Arquivo sem nome.")
+    ext = Path(file.filename).suffix.lower()
+    if ext not in SUPPORTED_ASSET_EXTENSIONS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Formato '{ext}' não suportado. Use: {', '.join(sorted(SUPPORTED_ASSET_EXTENSIONS))}",
+        )
+    clean_stem = re.sub(r"[^a-zA-Z0-9_-]", "_", Path(file.filename).stem)[:60]
+    asset_id = f"asset_{uuid.uuid4().hex[:8]}"
+    saved_filename = f"{asset_id}_{clean_stem}{ext}"
+    saved_path = ASSETS_DIR / saved_filename
+    raw_bytes = await file.read()
+    saved_path.write_bytes(raw_bytes)
+
+    return {
+        "id": asset_id,
+        "name": file.filename,
+        "format": ext.lstrip("."),
+        "url": f"/outputs/assets/{saved_filename}",
+        "size_bytes": len(raw_bytes),
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+@app.get("/api/v1/assets")
+async def list_studio_assets() -> List[Dict[str, object]]:
+    assets: List[Dict[str, object]] = []
+    for p in sorted(ASSETS_DIR.glob("*"), key=lambda f: f.stat().st_mtime, reverse=True):
+        if p.is_file() and p.suffix.lower() in SUPPORTED_ASSET_EXTENSIONS:
+            assets.append(
+                {
+                    "id": p.stem.split("_")[0] + "_" + p.stem.split("_")[1] if "_" in p.stem else p.stem,
+                    "name": p.name,
+                    "format": p.suffix.lower().lstrip("."),
+                    "url": f"/outputs/assets/{p.name}",
+                    "size_bytes": p.stat().st_size,
+                }
+            )
+    return assets
+
+
+@app.post("/api/v1/projects", response_model=StudioProjectState)
+async def save_studio_project(project: StudioProjectState) -> StudioProjectState:
+    safe_id = re.sub(r"[^a-zA-Z0-9_-]", "_", project.project_id or f"proj_{uuid.uuid4().hex[:8]}")[:70]
+    project.project_id = safe_id
+    project.updated_at = datetime.now(timezone.utc).isoformat()
+    target = PROJECTS_DIR / f"{safe_id}.json"
+    target.write_text(
+        json.dumps(project.model_dump(mode="json"), ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    return project
+
+
+@app.get("/api/v1/projects", response_model=List[StudioProjectState])
+async def list_studio_projects() -> List[StudioProjectState]:
+    projects: List[StudioProjectState] = []
+    for p in sorted(PROJECTS_DIR.glob("*.json"), key=lambda f: f.stat().st_mtime, reverse=True):
+        try:
+            projects.append(StudioProjectState.model_validate_json(p.read_text(encoding="utf-8")))
+        except Exception:
+            continue
+    return projects[:40]
+
+
+@app.get("/api/v1/projects/{project_id}", response_model=StudioProjectState)
+async def get_studio_project(project_id: str) -> StudioProjectState:
+    safe_id = re.sub(r"[^a-zA-Z0-9_-]", "_", project_id)[:70]
+    target = PROJECTS_DIR / f"{safe_id}.json"
+    if not target.exists():
+        raise HTTPException(status_code=404, detail=f"Projeto '{project_id}' não encontrado.")
+    return StudioProjectState.model_validate_json(target.read_text(encoding="utf-8"))
+
+
+@app.delete("/api/v1/projects/{project_id}")
+async def delete_studio_project(project_id: str) -> Dict[str, bool]:
+    safe_id = re.sub(r"[^a-zA-Z0-9_-]", "_", project_id)[:70]
+    target = PROJECTS_DIR / f"{safe_id}.json"
+    target.unlink(missing_ok=True)
+    return {"deleted": True}
