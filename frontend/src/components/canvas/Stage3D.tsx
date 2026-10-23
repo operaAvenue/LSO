@@ -11,6 +11,8 @@ import {
 } from "@react-three/drei";
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
+import { DRACOLoader } from "three/examples/jsm/loaders/DRACOLoader.js";
+import { MeshoptDecoder } from "three/examples/jsm/libs/meshopt_decoder.module.js";
 import { OBJLoader } from "three/examples/jsm/loaders/OBJLoader.js";
 import { FBXLoader } from "three/examples/jsm/loaders/FBXLoader.js";
 import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
@@ -51,6 +53,12 @@ interface Stage3DProps {
     position: [number, number, number],
     rotation: [number, number, number],
     scale: [number, number, number]
+  ) => void;
+  onUpdateCharacterTransform?: (
+    id: string,
+    position: [number, number, number],
+    rotation: [number, number, number],
+    scale: number
   ) => void;
 }
 
@@ -112,7 +120,8 @@ function FpsTelemetryTracker({ onFps }: { onFps: (fps: number) => void }) {
 
 /**
  * Multi-Format 3D Model Loader Component
- * Supports: .glb, .gltf, .obj, .fbx, .stl, .dae (Collada), .ply
+ * Supports: .glb, .gltf (with Draco & Meshopt), .obj, .fbx, .stl, .dae (Collada), .ply
+ * Automatically normalizes scale, centers X/Z, grounds min.Y to 0, and plays embedded GLTF animations.
  */
 function Imported3DModelMesh({
   url,
@@ -123,6 +132,9 @@ function Imported3DModelMesh({
   wireframe,
   castShadow,
   receiveShadow,
+  isCharacter = false,
+  audioAmplitude = 0,
+  isPlaying = false,
 }: {
   url: string;
   format: string;
@@ -132,32 +144,79 @@ function Imported3DModelMesh({
   wireframe: boolean;
   castShadow: boolean;
   receiveShadow: boolean;
+  isCharacter?: boolean;
+  audioAmplitude?: number;
+  isPlaying?: boolean;
 }) {
   const [loadedGroup, setLoadedGroup] = useState<THREE.Object3D | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const mixerRef = useRef<THREE.AnimationMixer | null>(null);
+  const morphMeshesRef = useRef<THREE.Mesh[]>([]);
+  const jawBoneRef = useRef<THREE.Object3D | null>(null);
+
+  useFrame((_, delta) => {
+    if (mixerRef.current) {
+      mixerRef.current.update(delta);
+    }
+    const mouthVal = isPlaying ? Math.min(1, audioAmplitude * 1.6) : 0;
+    for (const mesh of morphMeshesRef.current) {
+      const dict = mesh.morphTargetDictionary;
+      const infl = mesh.morphTargetInfluences;
+      if (!dict || !infl) continue;
+      for (const key of [
+        "mouthOpen",
+        "jawOpen",
+        "viseme_aa",
+        "viseme_O",
+        "Mouth_Open",
+        "A",
+      ]) {
+        if (key in dict) {
+          infl[dict[key]] = THREE.MathUtils.lerp(infl[dict[key]], mouthVal, 0.4);
+        }
+      }
+    }
+    if (jawBoneRef.current) {
+      jawBoneRef.current.rotation.x = THREE.MathUtils.lerp(
+        jawBoneRef.current.rotation.x,
+        mouthVal * 0.35,
+        0.4
+      );
+    }
+  });
 
   useEffect(() => {
     if (!url) return;
     let cancelled = false;
+    setLoadError(null);
     const fullUrl = resolveBackendAssetUrl(url);
-    const ext = (format || url.split(".").pop() || "glb").toLowerCase();
+    const rawExt = (format || url.split(".").pop() || "glb").toLowerCase();
+    const validExts = ["glb", "gltf", "obj", "fbx", "dae", "stl", "ply"];
+    const ext = validExts.includes(rawExt) ? rawExt : "glb";
 
-    const applyMaterialAndShadows = (root: THREE.Object3D) => {
-      // Auto-normalize bounding box to reasonable studio scale if huge or microscopic
-      const box = new THREE.Box3().setFromObject(root);
-      const size = new THREE.Vector3();
-      box.getSize(size);
-      const maxDim = Math.max(size.x, size.y, size.z);
-      if (maxDim > 12 || (maxDim > 0 && maxDim < 0.08)) {
-        const normFactor = 1.6 / maxDim;
-        root.scale.multiplyScalar(normFactor);
-      }
+    const normalizeAndWrap = (
+      root: THREE.Object3D,
+      animations?: THREE.AnimationClip[]
+    ) => {
+      const morphs: THREE.Mesh[] = [];
+      let foundJaw: THREE.Object3D | null = null;
 
       root.traverse((child) => {
+        if (
+          !foundJaw &&
+          /jaw|mouth|chin/i.test(child.name) &&
+          (child as THREE.Bone).isBone
+        ) {
+          foundJaw = child;
+        }
         if ((child as THREE.Mesh).isMesh) {
           const mesh = child as THREE.Mesh;
           mesh.castShadow = castShadow;
           mesh.receiveShadow = receiveShadow;
+          mesh.frustumCulled = false;
+          if (mesh.morphTargetDictionary && mesh.morphTargetInfluences) {
+            morphs.push(mesh);
+          }
           if (!mesh.material) {
             mesh.material = new THREE.MeshStandardMaterial({
               color,
@@ -167,24 +226,75 @@ function Imported3DModelMesh({
             });
           } else if (Array.isArray(mesh.material)) {
             mesh.material.forEach((m) => {
-              if ("wireframe" in m) (m as THREE.MeshStandardMaterial).wireframe = wireframe;
+              if ("wireframe" in m)
+                (m as THREE.MeshStandardMaterial).wireframe = wireframe;
             });
           } else if ("wireframe" in mesh.material) {
             (mesh.material as THREE.MeshStandardMaterial).wireframe = wireframe;
           }
         }
       });
+
+      morphMeshesRef.current = morphs;
+      jawBoneRef.current = foundJaw;
+
+      // Compute bounding box & normalize scale + center X/Z + ground min.Y = 0
+      root.updateMatrixWorld(true);
+      const box = new THREE.Box3().setFromObject(root);
+      const size = new THREE.Vector3();
+      box.getSize(size);
+      const maxDim = Math.max(size.x, size.y, size.z);
+
+      const wrapper = new THREE.Group();
+      if (maxDim > 0 && Number.isFinite(maxDim)) {
+        const targetDim = isCharacter ? 2.15 : 1.75;
+        const shouldNormalize =
+          isCharacter || maxDim > 5.0 || maxDim < 0.25;
+        const scaleFactor = shouldNormalize ? targetDim / maxDim : 1.0;
+        root.scale.multiplyScalar(scaleFactor);
+        root.updateMatrixWorld(true);
+
+        const scaledBox = new THREE.Box3().setFromObject(root);
+        const scaledCenter = new THREE.Vector3();
+        scaledBox.getCenter(scaledCenter);
+
+        root.position.x -= scaledCenter.x;
+        root.position.z -= scaledCenter.z;
+        root.position.y -= scaledBox.min.y;
+      }
+
+      wrapper.add(root);
+
+      if (animations && animations.length > 0) {
+        const mixer = new THREE.AnimationMixer(root);
+        const action = mixer.clipAction(animations[0]);
+        action.play();
+        mixerRef.current = mixer;
+      } else {
+        mixerRef.current = null;
+      }
+
+      setLoadedGroup(wrapper);
     };
 
     try {
       if (ext === "glb" || ext === "gltf") {
         const loader = new GLTFLoader();
+        const dracoLoader = new DRACOLoader();
+        dracoLoader.setDecoderPath(
+          "https://www.gstatic.com/draco/versioned/decoders/1.5.7/"
+        );
+        loader.setDRACOLoader(dracoLoader);
+        try {
+          loader.setMeshoptDecoder(MeshoptDecoder);
+        } catch {
+          // optional meshopt decoder
+        }
         loader.load(
           fullUrl,
           (gltf) => {
             if (cancelled) return;
-            applyMaterialAndShadows(gltf.scene);
-            setLoadedGroup(gltf.scene);
+            normalizeAndWrap(gltf.scene, gltf.animations);
           },
           undefined,
           (err) => !cancelled && setLoadError(String(err))
@@ -205,8 +315,7 @@ function Imported3DModelMesh({
                 });
               }
             });
-            applyMaterialAndShadows(obj);
-            setLoadedGroup(obj);
+            normalizeAndWrap(obj);
           },
           undefined,
           (err) => !cancelled && setLoadError(String(err))
@@ -217,8 +326,7 @@ function Imported3DModelMesh({
           fullUrl,
           (fbx) => {
             if (cancelled) return;
-            applyMaterialAndShadows(fbx);
-            setLoadedGroup(fbx);
+            normalizeAndWrap(fbx, fbx.animations);
           },
           undefined,
           (err) => !cancelled && setLoadError(String(err))
@@ -229,8 +337,7 @@ function Imported3DModelMesh({
           fullUrl,
           (collada) => {
             if (cancelled) return;
-            applyMaterialAndShadows(collada.scene);
-            setLoadedGroup(collada.scene);
+            normalizeAndWrap(collada.scene);
           },
           undefined,
           (err) => !cancelled && setLoadError(String(err))
@@ -251,8 +358,7 @@ function Imported3DModelMesh({
             const mesh = new THREE.Mesh(geom, mat);
             const grp = new THREE.Group();
             grp.add(mesh);
-            applyMaterialAndShadows(grp);
-            setLoadedGroup(grp);
+            normalizeAndWrap(grp);
           },
           undefined,
           (err) => !cancelled && setLoadError(String(err))
@@ -273,8 +379,7 @@ function Imported3DModelMesh({
             const mesh = new THREE.Mesh(geom, mat);
             const grp = new THREE.Group();
             grp.add(mesh);
-            applyMaterialAndShadows(grp);
-            setLoadedGroup(grp);
+            normalizeAndWrap(grp);
           },
           undefined,
           (err) => !cancelled && setLoadError(String(err))
@@ -286,8 +391,11 @@ function Imported3DModelMesh({
 
     return () => {
       cancelled = true;
+      if (mixerRef.current) {
+        mixerRef.current.stopAllAction();
+      }
     };
-  }, [url, format, color, metalness, roughness, wireframe, castShadow, receiveShadow]);
+  }, [url, format, color, metalness, roughness, wireframe, castShadow, receiveShadow, isCharacter]);
 
   if (loadError || !loadedGroup) {
     return (
@@ -552,6 +660,8 @@ function Customizable3DCharacter({
   wireframe,
   isSelected,
   onSelect,
+  transformMode,
+  onTransformEnd,
 }: {
   spec: CharacterSpec;
   pose: RigKeyframe;
@@ -560,7 +670,14 @@ function Customizable3DCharacter({
   wireframe: boolean;
   isSelected: boolean;
   onSelect: () => void;
+  transformMode: "translate" | "rotate" | "scale";
+  onTransformEnd?: (
+    pos: [number, number, number],
+    rot: [number, number, number],
+    scl: number
+  ) => void;
 }) {
+  const charRootRef = useRef<THREE.Group>(null);
   const torsoRef = useRef<THREE.Group>(null);
   const headRef = useRef<THREE.Group>(null);
   const jawRef = useRef<THREE.Mesh>(null);
@@ -679,8 +796,9 @@ function Customizable3DCharacter({
     THREE.MathUtils.degToRad(spec.rotation[2] || 0),
   ];
 
-  return (
+  const charContent = (
     <group
+      ref={charRootRef}
       position={spec.position}
       rotation={rotRad}
       scale={[spec.scale, spec.scale, spec.scale]}
@@ -698,7 +816,7 @@ function Customizable3DCharacter({
       )}
 
       {spec.custom_3d_model_url ? (
-        <group position={[0, 0.85, 0]}>
+        <group ref={torsoRef} position={[0, 0, 0]}>
           <Imported3DModelMesh
             url={spec.custom_3d_model_url}
             format={spec.custom_3d_format || "glb"}
@@ -708,6 +826,9 @@ function Customizable3DCharacter({
             wireframe={wireframe}
             castShadow={true}
             receiveShadow={true}
+            isCharacter={true}
+            audioAmplitude={spec.is_active_speaker ? audioAmplitude : 0}
+            isPlaying={isPlaying}
           />
         </group>
       ) : (
@@ -885,6 +1006,33 @@ function Customizable3DCharacter({
       )}
     </group>
   );
+
+  if (isSelected && !spec.locked && onTransformEnd) {
+    return (
+      <TransformControls
+        mode={transformMode}
+        onMouseUp={() => {
+          if (!charRootRef.current) return;
+          const p = charRootRef.current.position;
+          const r = charRootRef.current.rotation;
+          const s = charRootRef.current.scale;
+          onTransformEnd(
+            [Number(p.x.toFixed(2)), Number(p.y.toFixed(2)), Number(p.z.toFixed(2))],
+            [
+              Number(THREE.MathUtils.radToDeg(r.x).toFixed(1)),
+              Number(THREE.MathUtils.radToDeg(r.y).toFixed(1)),
+              Number(THREE.MathUtils.radToDeg(r.z).toFixed(1)),
+            ],
+            Number(s.x.toFixed(2))
+          );
+        }}
+      >
+        {charContent}
+      </TransformControls>
+    );
+  }
+
+  return charContent;
 }
 
 export default function Stage3D({
@@ -905,6 +1053,7 @@ export default function Stage3D({
   onSelectItem,
   transformMode,
   onUpdateObjectTransform,
+  onUpdateCharacterTransform,
 }: Stage3DProps) {
   const [fps, setFps] = useState<number>(60);
   const emotion: EmotionType = currentAct?.dominant_emotion || "ANALYTICAL";
@@ -1040,6 +1189,10 @@ export default function Stage3D({
             wireframe={quality.wireframe_debug}
             isSelected={selectedItemId === ch.id}
             onSelect={() => onSelectItem(ch.id)}
+            transformMode={transformMode}
+            onTransformEnd={(pos, rot, scl) =>
+              onUpdateCharacterTransform?.(ch.id, pos, rot, scl)
+            }
           />
         ))}
 

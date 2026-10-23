@@ -723,6 +723,15 @@ export default function AITVStudioWorkspace() {
                     )
                   );
                 }}
+                onUpdateCharacterTransform={(id, pos, rot, scl) => {
+                  setCharacters((prev) =>
+                    prev.map((c) =>
+                      c.id === id
+                        ? { ...c, position: pos, rotation: rot, scale: scl }
+                        : c
+                    )
+                  );
+                }}
               />
             ) : (
               <StageSouthPark
@@ -805,6 +814,12 @@ export default function AITVStudioWorkspace() {
         }}
         onExportProjectJson={handleExportProjectJson}
         onImportProjectJson={handleImportProjectJson}
+        onEnsure3DStage={() => {
+          setRenderStageMode("3D");
+          if (layoutMode === "GRAPH") {
+            setLayoutMode("STAGE");
+          }
+        }}
       />
 
       {/* Resizable Picture-in-Picture (PiP) Input Video Monitor */}

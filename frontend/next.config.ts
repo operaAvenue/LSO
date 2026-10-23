@@ -6,6 +6,12 @@ const backendInternal =
 const nextConfig: NextConfig = {
   reactStrictMode: false,
   transpilePackages: ["three", "@react-three/fiber", "@react-three/drei"],
+  experimental: {
+    middlewareClientMaxBodySize: "250mb",
+    serverActions: {
+      bodySizeLimit: "250mb",
+    },
+  },
   async rewrites() {
     return [
       {

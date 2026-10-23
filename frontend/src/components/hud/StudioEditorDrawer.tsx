@@ -75,6 +75,7 @@ interface StudioEditorDrawerProps {
   onDeleteProject: (projectId: string) => Promise<void>;
   onExportProjectJson: () => void;
   onImportProjectJson: (file: File) => void;
+  onEnsure3DStage?: () => void;
 }
 
 const STUDIO_PRIMITIVES: { kind: SceneObjectKind; label: string; color: string }[] = [
@@ -187,12 +188,14 @@ export default function StudioEditorDrawer({
   onDeleteProject,
   onExportProjectJson,
   onImportProjectJson,
+  onEnsure3DStage,
 }: StudioEditorDrawerProps) {
   const [uploading, setUploading] = useState(false);
   const [savingProj, setSavingProj] = useState(false);
   const [banner, setBanner] = useState<string | null>(null);
   const [newLayerName, setNewLayerName] = useState("");
   const modelInputRef = useRef<HTMLInputElement>(null);
+  const newCharGlbInputRef = useRef<HTMLInputElement>(null);
   const char3DInputRef = useRef<HTMLInputElement>(null);
   const char2DInputRef = useRef<HTMLInputElement>(null);
   const projectJsonInputRef = useRef<HTMLInputElement>(null);
@@ -222,6 +225,9 @@ export default function StudioEditorDrawer({
     try {
       const uploaded = await uploadStudioAsset(file);
       const is2D = ["png", "svg", "webp", "jpg", "jpeg"].includes(uploaded.format);
+      if (!is2D) {
+        onEnsure3DStage?.();
+      }
       const newObj: SceneObjectItem = {
         id: `obj_${Date.now()}`,
         name: file.name,
@@ -229,7 +235,7 @@ export default function StudioEditorDrawer({
         kind: is2D ? "sprite_2d" : "imported_model",
         format: uploaded.format,
         asset_url: uploaded.url,
-        position: [0, 0, 0],
+        position: [0, -0.35, 1.35],
         rotation: [0, 0, 0],
         scale: [1, 1, 1],
         color: "#e2e8f0",
@@ -397,6 +403,7 @@ export default function StudioEditorDrawer({
                 className="hidden"
                 onChange={(e) => {
                   const file = e.target.files?.[0];
+                  e.target.value = "";
                   if (file) handleUpload3DOr2DObject(file);
                 }}
               />
@@ -700,49 +707,121 @@ export default function StudioEditorDrawer({
         {/* TAB 2: 3D & 2D CHARACTER CREATOR / CUSTOMIZER */}
         {activeTab === "CHARACTERS" && (
           <div className="space-y-3.5">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between gap-2">
               <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
                 Elenco da Emissora ({characters.length})
               </span>
-              <button
-                type="button"
-                onClick={() => {
-                  const newChar: CharacterSpec = {
-                    id: `char_${Date.now().toString().slice(-4)}`,
-                    name: `Apresentador ${characters.length + 1}`,
-                    role: "Comentarista Convidado",
-                    layer_id: "layer_characters",
-                    mode: "BOTH",
-                    voice_id: "pNInz6obpgDQGcFmaJgB",
-                    position: [
-                      Number(((characters.length % 2 === 0 ? 1.15 : -1.15)).toFixed(2)),
-                      -0.35,
-                      0,
-                    ],
-                    rotation: [0, characters.length % 2 === 0 ? -15 : 15, 0],
-                    scale: 1.0,
-                    skin_color: "#e2b897",
-                    suit_color: "#0f172a",
-                    shirt_color: "#ffffff",
-                    tie_color: "#f59e0b",
-                    hair_style: "spiky",
-                    hair_color: "#1e293b",
-                    hat_style: "none",
-                    hat_color: "#3b82f6",
-                    glasses: false,
-                    glove_color: "#10b981",
-                    eye_scale: 1.0,
-                    visible: true,
-                    locked: false,
-                    is_active_speaker: false,
-                  };
-                  onChangeCharacters([...characters, newChar]);
-                  onSelectItem(newChar.id);
-                }}
-                className="px-3 py-1 rounded-xl bg-fuchsia-600 hover:bg-fuchsia-500 text-white font-bold text-[11px] flex items-center gap-1 cursor-pointer"
-              >
-                <Plus className="w-3.5 h-3.5" /> Criar Personagem 3D/2D
-              </button>
+              <div className="flex items-center gap-1.5">
+                <input
+                  ref={newCharGlbInputRef}
+                  type="file"
+                  accept=".glb,.gltf,.fbx,.obj"
+                  className="hidden"
+                  onChange={async (e) => {
+                    const f = e.target.files?.[0];
+                    e.target.value = "";
+                    if (!f) return;
+                    setUploading(true);
+                    setBanner("Carregando e normalizando personagem 3D (.GLB)...");
+                    try {
+                      const res = await uploadStudioAsset(f);
+                      onEnsure3DStage?.();
+                      const cleanName = f.name.replace(/\.[^/.]+$/, "");
+                      const newChar: CharacterSpec = {
+                        id: `char_${Date.now().toString().slice(-4)}`,
+                        name: cleanName,
+                        role: "Personagem 3D (.GLB)",
+                        layer_id: "layer_characters",
+                        mode: "BOTH",
+                        voice_id: "pNInz6obpgDQGcFmaJgB",
+                        position: [0, -0.35, 1.35],
+                        rotation: [0, 0, 0],
+                        scale: 1.0,
+                        skin_color: "#e2b897",
+                        suit_color: "#0f172a",
+                        shirt_color: "#ffffff",
+                        tie_color: "#00f0ff",
+                        hair_style: "executive",
+                        hair_color: "#1e293b",
+                        hat_style: "none",
+                        hat_color: "#3b82f6",
+                        glasses: false,
+                        glove_color: "#10b981",
+                        eye_scale: 1.0,
+                        custom_3d_model_url: res.url,
+                        custom_3d_format: res.format,
+                        visible: true,
+                        locked: false,
+                        is_active_speaker: true,
+                      };
+                      onChangeCharacters([...characters, newChar]);
+                      onSelectItem(newChar.id);
+                      setBanner(
+                        `✅ Personagem 3D "${cleanName}" (.${res.format.toUpperCase()}) criado e posicionado na frente do palco!`
+                      );
+                    } catch (err: unknown) {
+                      setBanner(
+                        err instanceof Error
+                          ? err.message
+                          : "Erro ao importar personagem .GLB"
+                      );
+                    } finally {
+                      setUploading(false);
+                    }
+                  }}
+                />
+                <button
+                  type="button"
+                  disabled={uploading}
+                  onClick={() => newCharGlbInputRef.current?.click()}
+                  className="px-2.5 py-1 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-[11px] flex items-center gap-1 cursor-pointer shadow"
+                >
+                  <Upload className="w-3.5 h-3.5" />
+                  <span>{uploading ? "Importando..." : "+ Personagem .GLB"}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    const newChar: CharacterSpec = {
+                      id: `char_${Date.now().toString().slice(-4)}`,
+                      name: `Apresentador ${characters.length + 1}`,
+                      role: "Comentarista Convidado",
+                      layer_id: "layer_characters",
+                      mode: "BOTH",
+                      voice_id: "pNInz6obpgDQGcFmaJgB",
+                      position: [
+                        Number(
+                          (characters.length % 2 === 0 ? 1.15 : -1.15).toFixed(2)
+                        ),
+                        -0.35,
+                        0,
+                      ],
+                      rotation: [0, characters.length % 2 === 0 ? -15 : 15, 0],
+                      scale: 1.0,
+                      skin_color: "#e2b897",
+                      suit_color: "#0f172a",
+                      shirt_color: "#ffffff",
+                      tie_color: "#f59e0b",
+                      hair_style: "spiky",
+                      hair_color: "#1e293b",
+                      hat_style: "none",
+                      hat_color: "#3b82f6",
+                      glasses: false,
+                      glove_color: "#10b981",
+                      eye_scale: 1.0,
+                      visible: true,
+                      locked: false,
+                      is_active_speaker: false,
+                    };
+                    onChangeCharacters([...characters, newChar]);
+                    onSelectItem(newChar.id);
+                  }}
+                  className="px-2.5 py-1 rounded-xl bg-fuchsia-600 hover:bg-fuchsia-500 text-white font-bold text-[11px] flex items-center gap-1 cursor-pointer"
+                >
+                  <Plus className="w-3.5 h-3.5" /> Procedural
+                </button>
+              </div>
             </div>
 
             {/* Character Selector Pills */}
@@ -942,6 +1021,53 @@ export default function StudioEditorDrawer({
                   </label>
                 </div>
 
+                {/* Active 3D Mesh Status Badge & Quick Stage Positioning */}
+                {selectedChar.custom_3d_model_url && (
+                  <div className="p-2 rounded-xl bg-cyan-500/15 border border-cyan-400/40 flex flex-col gap-1.5">
+                    <div className="flex items-center justify-between text-[10px]">
+                      <span className="font-bold text-cyan-300 truncate">
+                        ✅ Mesh 3D Ativa (.{(selectedChar.custom_3d_format || "glb").toUpperCase()})
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          updateChar(selectedChar.id, {
+                            custom_3d_model_url: undefined,
+                            custom_3d_format: undefined,
+                          })
+                        }
+                        className="text-red-300 hover:text-red-200 underline text-[10px] cursor-pointer"
+                      >
+                        Voltar ao Procedural
+                      </button>
+                    </div>
+                    <div className="grid grid-cols-2 gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          updateChar(selectedChar.id, {
+                            position: [0, -0.35, 1.35],
+                          })
+                        }
+                        className="py-1 px-2 rounded-lg bg-cyan-500/25 hover:bg-cyan-500/40 text-cyan-100 text-[10px] font-semibold cursor-pointer"
+                      >
+                        Posicionar na Frente da Bancada
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          updateChar(selectedChar.id, {
+                            position: [0, -0.35, 0],
+                          })
+                        }
+                        className="py-1 px-2 rounded-lg bg-white/10 hover:bg-white/20 text-slate-200 text-[10px] font-semibold cursor-pointer"
+                      >
+                        Posicionar Atrás da Bancada
+                      </button>
+                    </div>
+                  </div>
+                )}
+
                 {/* Custom 3D Rig / 2D Cutout Sprite Upload for this Character */}
                 <div className="grid grid-cols-2 gap-2 pt-1">
                   <input
@@ -951,22 +1077,49 @@ export default function StudioEditorDrawer({
                     className="hidden"
                     onChange={async (e) => {
                       const f = e.target.files?.[0];
+                      e.target.value = "";
                       if (!f) return;
-                      const res = await uploadStudioAsset(f);
-                      updateChar(selectedChar.id, {
-                        custom_3d_model_url: res.url,
-                        custom_3d_format: res.format,
-                      });
-                      setBanner(`Rig 3D customizado atribuído a ${selectedChar.name}!`);
+                      setUploading(true);
+                      setBanner(`Carregando "${f.name}" para ${selectedChar.name}...`);
+                      try {
+                        const res = await uploadStudioAsset(f);
+                        onEnsure3DStage?.();
+                        updateChar(selectedChar.id, {
+                          custom_3d_model_url: res.url,
+                          custom_3d_format: res.format,
+                          mode: "BOTH",
+                          visible: true,
+                          position:
+                            selectedChar.position[2] <= 0.1
+                              ? [selectedChar.position[0], -0.35, 1.35]
+                              : selectedChar.position,
+                        });
+                        setBanner(
+                          `✅ Mesh 3D "${f.name}" aplicada em ${selectedChar.name} no Palco 3D!`
+                        );
+                      } catch (err: unknown) {
+                        setBanner(
+                          err instanceof Error
+                            ? err.message
+                            : "Erro ao carregar arquivo .GLB"
+                        );
+                      } finally {
+                        setUploading(false);
+                      }
                     }}
                   />
                   <button
                     type="button"
+                    disabled={uploading}
                     onClick={() => char3DInputRef.current?.click()}
-                    className="py-1.5 px-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-[10px] font-semibold flex items-center justify-center gap-1"
+                    className="py-1.5 px-2 rounded-xl bg-cyan-500/20 hover:bg-cyan-500/35 border border-cyan-400/40 text-cyan-200 text-[10px] font-bold flex items-center justify-center gap-1 cursor-pointer"
                   >
                     <Upload className="w-3 h-3 text-cyan-400" />
-                    <span>Importar Mesh 3D (.GLB/.FBX)</span>
+                    <span>
+                      {uploading
+                        ? "Carregando .GLB..."
+                        : "Importar Mesh 3D (.GLB/.FBX)"}
+                    </span>
                   </button>
 
                   <input
@@ -976,18 +1129,31 @@ export default function StudioEditorDrawer({
                     className="hidden"
                     onChange={async (e) => {
                       const f = e.target.files?.[0];
+                      e.target.value = "";
                       if (!f) return;
-                      const res = await uploadStudioAsset(f);
-                      updateChar(selectedChar.id, {
-                        custom_2d_head_url: res.url,
-                      });
-                      setBanner(`Cabeça 2D recortada atribuída a ${selectedChar.name}!`);
+                      setUploading(true);
+                      try {
+                        const res = await uploadStudioAsset(f);
+                        updateChar(selectedChar.id, {
+                          custom_2d_head_url: res.url,
+                        });
+                        setBanner(`Cabeça 2D recortada atribuída a ${selectedChar.name}!`);
+                      } catch (err: unknown) {
+                        setBanner(
+                          err instanceof Error
+                            ? err.message
+                            : "Erro ao carregar imagem 2D"
+                        );
+                      } finally {
+                        setUploading(false);
+                      }
                     }}
                   />
                   <button
                     type="button"
+                    disabled={uploading}
                     onClick={() => char2DInputRef.current?.click()}
-                    className="py-1.5 px-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-[10px] font-semibold flex items-center justify-center gap-1"
+                    className="py-1.5 px-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-[10px] font-semibold flex items-center justify-center gap-1 cursor-pointer"
                   >
                     <Upload className="w-3 h-3 text-amber-400" />
                     <span>Importar Cabeça 2D (.PNG/.SVG)</span>

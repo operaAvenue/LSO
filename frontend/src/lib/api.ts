@@ -499,9 +499,19 @@ function buildVaultHeaders(vault: ApiVaultState): Record<string, string> {
   return headers;
 }
 
+const localAssetBlobMap = new Map<string, string>();
+
 export function resolveBackendAssetUrl(pathOrUrl?: string | null): string {
   if (!pathOrUrl) return "";
-  if (pathOrUrl.startsWith("http://") || pathOrUrl.startsWith("https://") || pathOrUrl.startsWith("blob:") || pathOrUrl.startsWith("data:")) {
+  if (localAssetBlobMap.has(pathOrUrl)) {
+    return localAssetBlobMap.get(pathOrUrl)!;
+  }
+  if (
+    pathOrUrl.startsWith("http://") ||
+    pathOrUrl.startsWith("https://") ||
+    pathOrUrl.startsWith("blob:") ||
+    pathOrUrl.startsWith("data:")
+  ) {
     return pathOrUrl;
   }
   return `${BACKEND_URL}${pathOrUrl.startsWith("/") ? "" : "/"}${pathOrUrl}`;
@@ -641,17 +651,39 @@ export async function uploadStudioAsset(file: File): Promise<{
   url: string;
   size_bytes: number;
 }> {
-  const form = new FormData();
-  form.append("file", file);
-  const res = await fetch(`${BACKEND_URL}/api/v1/assets/upload`, {
-    method: "POST",
-    body: form,
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ detail: res.statusText }));
-    throw new Error(err.detail || "Falha no upload do asset 3D/2D");
+  const ext = (file.name.split(".").pop() || "glb").toLowerCase();
+  const localBlobUrl =
+    typeof window !== "undefined" ? URL.createObjectURL(file) : "";
+
+  try {
+    const form = new FormData();
+    form.append("file", file);
+    const res = await fetch(`${BACKEND_URL}/api/v1/assets/upload`, {
+      method: "POST",
+      body: form,
+    });
+    if (res.ok) {
+      const data = await res.json();
+      if (localBlobUrl && data.url) {
+        localAssetBlobMap.set(data.url, localBlobUrl);
+      }
+      return data;
+    }
+  } catch {
+    // Fallback to local blob URL if network or reverse proxy limits the upload size
   }
-  return res.json();
+
+  if (localBlobUrl) {
+    return {
+      id: `local_${Date.now()}`,
+      name: file.name,
+      format: ext,
+      url: localBlobUrl,
+      size_bytes: file.size,
+    };
+  }
+
+  throw new Error("Falha no upload do asset 3D/2D");
 }
 
 export async function fetchStudioAssets(): Promise<
